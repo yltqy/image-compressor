@@ -7,6 +7,8 @@ class ImageCompressor {
         this.initElements();
         this.bindEvents();
         this.currentFile = null;
+        this.compressionHistory = [];
+        this.maxHistoryItems = 5;
     }
 
     /**
@@ -109,14 +111,35 @@ class ImageCompressor {
             const canvas = document.createElement('canvas');
             const ctx = canvas.getContext('2d');
             
-            canvas.width = img.width;
-            canvas.height = img.height;
+            // 限制最大尺寸为 1920px
+            let { width, height } = img;
+            const maxSize = 1920;
             
-            ctx.drawImage(img, 0, 0);
+            if (width > maxSize || height > maxSize) {
+                if (width > height) {
+                    height = Math.round((height * maxSize) / width);
+                    width = maxSize;
+                } else {
+                    width = Math.round((width * maxSize) / height);
+                    height = maxSize;
+                }
+            }
+            
+            canvas.width = width;
+            canvas.height = height;
+            
+            // 使用双线性插值算法
+            ctx.imageSmoothingEnabled = true;
+            ctx.imageSmoothingQuality = 'high';
+            
+            ctx.drawImage(img, 0, 0, width, height);
             
             canvas.toBlob((blob) => {
                 this.compressedPreview.src = URL.createObjectURL(blob);
                 this.compressedSize.textContent = this.formatFileSize(blob.size);
+                
+                // 释放内存
+                URL.revokeObjectURL(img.src);
             }, file.type, quality);
         };
     }
@@ -153,6 +176,41 @@ class ImageCompressor {
         link.download = `compressed_${this.currentFile.name}`;
         link.href = this.compressedPreview.src;
         link.click();
+    }
+
+    /**
+     * 保存压缩历史
+     */
+    saveToHistory(original, compressed) {
+        const historyItem = {
+            timestamp: new Date(),
+            originalSize: original.size,
+            compressedSize: compressed.size,
+            ratio: ((compressed.size / original.size) * 100).toFixed(1) + '%'
+        };
+        
+        this.compressionHistory.unshift(historyItem);
+        
+        if (this.compressionHistory.length > this.maxHistoryItems) {
+            this.compressionHistory.pop();
+        }
+        
+        // 可以选择将历史记录保存到 localStorage
+        localStorage.setItem('compressionHistory', JSON.stringify(this.compressionHistory));
+    }
+    
+    /**
+     * 批量处理功能
+     */
+    async handleMultipleFiles(files) {
+        const results = [];
+        for (const file of files) {
+            if (this.validateFile(file)) {
+                const result = await this.compressImage(file, this.qualitySlider.value / 100);
+                results.push(result);
+            }
+        }
+        return results;
     }
 }
 
